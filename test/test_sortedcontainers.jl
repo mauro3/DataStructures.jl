@@ -62,7 +62,11 @@ function fulldump(t::DataStructures.BalancedTree23)
         k = t.data[j].k
         d = t.data[j].d
         p = t.data[j].parent
-        println("j = $j k = /$k/ d = /$d/ parent = /$p/")
+        if j > 2
+            println("j = $j k = /$k/ d = /$d/ parent = /$p/")
+        else
+            println("j = $j (  k = /$k/ d = /$d/ ) parent = /$p/")
+        end
     end
     println("----- FREE DATA CELLS -----")
     for i = 1 : size(t.freedatainds,1)
@@ -73,7 +77,8 @@ end
 
 ## Function checkcorrectness checks a balanced tree for correctness.
 
-function checkcorrectness{K,D,Ord <: Ordering}(t::DataStructures.BalancedTree23{K,D,Ord})
+function checkcorrectness{K,D,Ord <: Ordering}(t::DataStructures.BalancedTree23{K,D,Ord},
+                                               allowdups::Bool)
     dsz = size(t.data, 1)
     tsz = size(t.tree, 1)
     r = t.rootloc
@@ -135,7 +140,12 @@ function checkcorrectness{K,D,Ord <: Ordering}(t::DataStructures.BalancedTree23{
         else
             maxkeys[s] = t.data[lastchild].k
         end
-        if s > levstart[tdpth] && !lt(t.ord, maxkeys[s - 1], minkeys[s])
+        if s > levstart[tdpth] && 
+            (lt(t.ord, minkeys[s], maxkeys[s - 1]) ||
+             (!lt(t.ord, maxkeys[s-1],minkeys[s]) && !allowdups))
+            println("tdpth = ", tdpth, " s = ", s, 
+                    " maxkeys[s-1] = ", maxkeys[s-1],
+                    " minkeys[s] = ", minkeys[s])
             error("Data nodes out of order")
         end
         if s < bfstreesize || c3 > 0
@@ -184,14 +194,16 @@ function checkcorrectness{K,D,Ord <: Ordering}(t::DataStructures.BalancedTree23{
                 error("Parent/child2 links do not match")
             end
             c3 = t.tree[anc].child3
-            @assert(s == levstart[curdepth] || lt(t.ord,mk1,mk2))
+            @assert(s == levstart[curdepth] || 
+                    lt(t.ord,mk1,mk2) || (!lt(t.ord,mk2,mk1) && allowdups))
             if c3 > 0 
                 if t.tree[c3].parent != anc
                     error("Parent/child3 links do not match")
                 end
                 mk3 = minkeys[cp]
                 cp += 1
-                @assert(lt(t.ord,mk2, mk3))
+                @assert(lt(t.ord,mk2, mk3) ||
+                        !lt(t.ord,mk3,mk2) && allowdups)
             end
             if s > levstart[curdepth]
                 minkeys[s] = mk1
@@ -215,19 +227,17 @@ function checkcorrectness{K,D,Ord <: Ordering}(t::DataStructures.BalancedTree23{
         end
         push!(freedata, fdi)
     end
-    if in(:useddatacells, fieldnames(DataStructures.BalancedTree23))
-        if last(t.useddatacells) > dsz
-            error("t.useddatacells has indices larger than t.data size")
+    if last(t.useddatacells) > dsz
+        error("t.useddatacells has indices larger than t.data size")
+    end
+    for i = 1 : dsz
+        if (in(i, dataused) && !in(i, t.useddatacells)) ||
+            (!in(i,dataused) && in(i, t.useddatacells))
+            error("Mismatch between actual data cells used and useddatacells array")
         end
-        for i = 1 : dsz
-            if (in(i, dataused) && !in(i, t.useddatacells)) ||
-                (!in(i,dataused) && in(i, t.useddatacells))
-                error("Mismatch between actual data cells used and useddatacells array")
-            end
-            if (in(i, freedata) && in(i, dataused)) ||
-                (!in(i,freedata) && !in(i, dataused))
-                error("Mismatch between t.freedatainds and t.useddatacells")
-            end
+        if (in(i, freedata) && in(i, dataused)) ||
+            (!in(i,freedata) && !in(i, dataused))
+            error("Mismatch between t.freedatainds and t.useddatacells")
         end
     end
     freetree = IntSet()
@@ -252,17 +262,17 @@ end
 
 
 function test1()
-    # a few basic tests to start
+    # a few basic tests of SortedDict to start
     m1 = SortedDict((@compat Dict{ASCIIString,ASCIIString}()), Forward)
     kdarray = ["hello", "jello", "alpha", "beta", "fortune", "random",
                "july", "wednesday"]
-    checkcorrectness(m1.bt)
+    checkcorrectness(m1.bt, false)
     for i = 1 : div(size(kdarray,1), 2)
         k = kdarray[i*2-1]
         d = kdarray[i*2]
         #println("- inserting: k = $k d = $d")
         m1[k] = d
-        checkcorrectness(m1.bt)
+        checkcorrectness(m1.bt, false)
         # fulldump(m1.bt)
     end
     i1 = startof(m1)
@@ -272,17 +282,17 @@ function test1()
         k,d = deref(i1)
         #println("+ reading: k = $k, d = $d")
         i1 = advance(i1)
-        checkcorrectness(m1.bt)
+        checkcorrectness(m1.bt, false)
     end
     @test count == 4
 end
 
 function test2()
-    # test all the methods here except loops
+    # test all methods of SortedDict here except loops
     m0 = SortedDict(@compat Dict{Int, Float64}())
     m1 = SortedDict(@compat Dict(8=>32.0, 12=>33.1, 6=>18.2))
     expected = ([6,8,12], [18.2, 32.0, 33.1])
-    checkcorrectness(m1.bt)
+    checkcorrectness(m1.bt, false)
     ii = startof(m1)
     m2 = packdeepcopy(m1)
     m3 = packcopy(m1)
@@ -294,13 +304,13 @@ function test2()
         @test ii != pastendtoken(m1)
         pr = deref(ii)
         @test pr[1] == expected[1][j] && pr[2] == expected[2][j]
-        checkcorrectness(m1.bt)
+        checkcorrectness(m1.bt, false)
         oldii = ii
         ii = advance(ii)
         delete!(oldii)
     end
-    checkcorrectness(m1.bt)
-    checkcorrectness(m2.bt)
+    checkcorrectness(m1.bt, false)
+    checkcorrectness(m2.bt, false)
     @test length(m2) == 3
     ii = startof(m2)
     for j = 1 : 3
@@ -309,7 +319,7 @@ function test2()
         ii = advance(ii)
     end
 
-    checkcorrectness(m3.bt)
+    checkcorrectness(m3.bt, false)
     @test length(m3) == 3
     ii = startof(m3)
     for j = 1 : 3
@@ -324,7 +334,7 @@ function test2()
     for i = N : -1 : 2
         m1[i] = convert(Float64,i) ^ 2
         if i % 50 == 0
-            checkcorrectness(m1.bt)
+            checkcorrectness(m1.bt, false)
         end
     end
     @test !isempty(m1)
@@ -332,13 +342,17 @@ function test2()
     for i = 2 : N
         d = pop!(m1, i)
         @test d == convert(Float64,i)^2
-        checkcorrectness(m1.bt)
+        if i % 50 == 0
+            checkcorrectness(m1.bt, false)
+        end
     end
     @test isempty(m1)
     @test length(m1) == 0
     for i = N : -1 : 2
         m1[i] = convert(Float64,i) ^ 2
-        checkcorrectness(m1.bt)
+        if i % 50 == 0
+            checkcorrectness(m1.bt, false)
+        end
     end
     ii = endof(m1)
     for i = 1 : N - 1
@@ -357,11 +371,11 @@ function test2()
             p = find(m1, k)
             if p != pastendtoken(m1)
                 delete!(p)
-                checkcorrectness(m1.bt)
             end
         end
         lastprime = j
     end
+    checkcorrectness(m1.bt, false)
     @test ii == pastendtoken(m1)
     @test status(ii) == 3
     h = assemble(m1, semi(ii))
@@ -400,7 +414,7 @@ function test2()
     @test p[1] == 8 && p[2] == 51.0
     delete!(i7)
     z = pop!(m1, 6)
-    checkcorrectness(m1.bt)
+    checkcorrectness(m1.bt, false)
     @test z == 9.0
     i8 = startof(m1)
     p = deref(i8)
@@ -452,7 +466,7 @@ function test2()
     @test length(m1) == length(ww) - 1
     @test deref_key(advance(find(m1,13))) == 19
     empty!(m1)
-    checkcorrectness(m1.bt)
+    checkcorrectness(m1.bt, false)
     @test isempty(m1)
     c1 = SortedDict(@compat Dict("Eggplants"=>3, 
                         "Figs"=>9, 
@@ -462,7 +476,7 @@ function test2()
                         "Melons"=>11))
     @test !isequal(c1,c2)
     c3 = merge(c1, c2)
-    checkcorrectness(c3.bt)
+    checkcorrectness(c3.bt, false)
     c4 = SortedDict(@compat Dict("Apples"=>7, 
                         "Figs"=>9,
                         "Eggplants"=>6,
@@ -472,11 +486,11 @@ function test2()
     c5 = SortedDict(@compat Dict("Apples"=>7))
     @test !isequal(c4,c5)
     merge!(c1,c2)
-    checkcorrectness(c1.bt)
+    checkcorrectness(c1.bt, false)
     @test isequal(c3,c1)
     merge!(c3,c3)
     @test isequal(c3,c1)
-    checkcorrectness(c3.bt)
+    checkcorrectness(c3.bt, false)
 end
 
 
@@ -495,8 +509,8 @@ end
 
 
 
-## Test the loop constructs.
 function test3{T}(z::T)
+    ## Test the loops
     zero1 = zero(z)
     one1 = one(z)
     two1 = one1 + one1
@@ -591,11 +605,204 @@ function test3{T}(z::T)
         count += 1
     end
     @test count == 0
-end    
+
+    factors = SortedMultiDict(Int[], Int[])
+    N = 1000
+    len = 0
+    sum1 = 0
+    sum2 = 0
+    for factor = 1 : N
+        for multiple = factor : factor : N
+            insert!(factors, multiple, factor)
+            sum1 += multiple
+            sum2 += factor
+            len += 1
+        end
+    end
+
+    sum1a = 0
+    sum2a = 0
+
+    for (k,v) in factors
+        sum1a += k
+        sum2a += v
+    end
+    @test sum1a == sum1 && sum2a == sum2
+
+    sum2 = 0
+    for (k,v) in searchsortedfirst(factors,70) : searchsortedlast(factors,70)
+        sum2 += v
+    end
+    @test sum2 == 1 + 2 + 5 + 7 + 10 + 14 + 35 + 70
+    
+    sum3 = 0
+    for (k,v) in excludelast(searchsortedfirst(factors,60), searchsortedfirst(factors,61))
+        sum3 += v
+    end
+    @test sum3 == 1 + 2 + 3 + 4 + 5 + 6 + 10 + 12 + 15 + 20 + 30 + 60
+
+    sum4 = 0
+    for k in keys(factors)
+        sum4 += k
+    end
+    @test sum4 == sum1
+
+    sum5 = 0
+    for v in values(factors)
+        sum5 += v
+    end
+
+    @test sum5 == sum2a
+
+    sum2 = 0
+    for k in keys(searchsortedfirst(factors,70) : searchsortedlast(factors,70))
+        sum2 += k
+    end
+    @test sum2 == 70 * 8
+    
+    sum3 = 0
+    for k in keys(excludelast(searchsortedfirst(factors,60), searchsortedfirst(factors,61)))
+        sum3 += k
+    end
+    @test sum3 == 60 * 12
+
+    sum2 = 0
+    for v in values(searchsortedfirst(factors,70) : searchsortedlast(factors,70))
+        sum2 += v
+    end
+    @test sum2 == 1 + 2 + 5 + 7 + 10 + 14 + 35 + 70
+    
+    sum3 = 0
+    for v in values(excludelast(searchsortedfirst(factors,60), searchsortedfirst(factors,61)))
+        sum3 += v
+    end
+    @test sum3 == 1 + 2 + 3 + 4 + 5 + 6 + 10 + 12 + 15 + 20 + 30 + 60
 
 
-# test all the errors
+
+
+    sum1b = 0
+    sum2b = 0
+    for (t,(k,v)) in tokens(factors)
+        @test deref_value(t) == v
+        sum1b += k
+        sum2b += v
+    end
+    @test sum1b == sum1a && sum2b == sum2a
+
+    sum2 = 0
+    for (t,(k,v)) in tokens(searchsortedfirst(factors,70) : searchsortedlast(factors,70))
+        @test deref_value(t) == v
+        sum2 += v
+    end
+    @test sum2 == 1 + 2 + 5 + 7 + 10 + 14 + 35 + 70
+    
+    sum3 = 0
+    for (t,(k,v)) in tokens(excludelast(searchsortedfirst(factors,60), searchsortedfirst(factors,61)))
+        @test deref_value(t) == v
+        sum3 += v
+    end
+    @test sum3 == 1 + 2 + 3 + 4 + 5 + 6 + 10 + 12 + 15 + 20 + 30 + 60
+
+    sum4 = 0
+    for (t,k) in tokens(keys(factors))
+        @test deref_key(t) == k && mod(k,deref_value(t)) == 0
+        sum4 += k
+    end
+    @test sum4 == sum1
+
+    sum5 = 0
+    for (t,v) in tokens(values(factors))
+        @test deref_value(t) == v
+        sum5 += v
+    end
+    @test sum5 == sum2a
+
+    sum2 = 0
+    for (t,k) in tokens(keys(searchsortedfirst(factors,70) : searchsortedlast(factors,70)))
+        @test deref_key(t) == k && mod(k,deref_value(t)) == 0
+        sum2 += k
+    end
+    @test sum2 == 70 * 8
+    
+    sum3 = 0
+    for (t,k) in tokens(keys(excludelast(searchsortedfirst(factors,60), searchsortedfirst(factors,61))))
+        @test deref_key(t) == k && mod(k,deref_value(t)) == 0
+        sum3 += k
+    end
+    @test sum3 == 60 * 12
+
+    sum2 = 0
+    for (t,v) in tokens(values(searchsortedfirst(factors,70) : searchsortedlast(factors,70)))
+        sum2 += v
+    end
+    @test sum2 == 1 + 2 + 5 + 7 + 10 + 14 + 35 + 70
+    
+    sum3 = 0
+    for (t,v) in tokens(values(excludelast(searchsortedfirst(factors,60), searchsortedfirst(factors,61))))
+        sum3 += v
+    end
+    @test sum3 == 1 + 2 + 3 + 4 + 5 + 6 + 10 + 12 + 15 + 20 + 30 + 60
+    
+
+    s = SortedSet([39, 24, 2, 14, 45, 107, 66])
+    sum1 = 0
+    for k in s
+        sum1 += k
+    end
+    @test sum1 == sum([39, 24, 2, 14, 45, 107, 66])
+
+    sum1 = 0
+    for (t,k) in tokens(s)
+        @test deref(t) == k
+        sum1 += k
+    end
+    @test sum1 == sum([39, 24, 2, 14, 45, 107, 66])
+
+    sum2 = 0
+    for k in searchsortedfirst(s, 24) : searchsortedfirst(s, 66)
+        sum2 += k
+    end
+    @test sum2 == 24 + 39 + 45 + 66
+    sum2 = 0
+    for (t,k) in tokens(searchsortedfirst(s, 24) : searchsortedfirst(s, 66))
+        @test deref(t) == k
+        sum2 += k
+    end
+    @test sum2 == 24 + 39 + 45 + 66
+
+    sum3 = 0
+    for k in excludelast(searchsortedfirst(s, 24), searchsortedfirst(s, 66))
+        sum3 += k
+    end
+    @test sum3 == 24 + 39 + 45
+        
+    sum3 = 0
+
+    for (t,k) in tokens(excludelast(searchsortedfirst(s, 24), searchsortedfirst(s, 66)))
+        @test deref(t) == k
+        sum3 += k
+    end
+    @test sum3 == 24 + 39 + 45
+end
+
+
+
+
+
+
+
+
+    
+
+        
+
+
+
+
+
 function test4()
+    # test all the errors of SortedDict
     m = SortedDict(@compat Dict("a" => 6, "bb" => 9))
     @test_throws KeyError println(m["b"])
     m2 = SortedDict(@compat Dict{ASCIIString, Int}())
@@ -620,12 +827,29 @@ function test4()
     @test_throws BoundsError m[i1semi]
     @test_throws BoundsError regress(beforestarttoken(m))
     @test_throws BoundsError advance(pastendtoken(m))
+    m1 = SortedMultiDict(Int[], Int[])
+    @test_throws ArgumentError m3 = SortedMultiDict(["a", "b"], [1,2,3])
+    @test_throws ArgumentError isequal(SortedMultiDict(["a"],[1]), SortedMultiDict(["b"], [1.0]))
+    @test_throws ArgumentError isequal(SortedMultiDict(["a"],[1],Reverse), SortedMultiDict(["b"], [1]))
+    @test_throws BoundsError first(m1)
+    @test_throws BoundsError last(m1)
+    s = SortedSet([3,5])
+    @test_throws KeyError delete!(s,7)
+    @test_throws KeyError pop!(s, 7)
+    pop!(s)
+    pop!(s)
+    @test_throws BoundsError pop!(s)
+    @test_throws BoundsError first(s)
+    @test_throws BoundsError last(s)
+    @test_throws ArgumentError isequal(SortedSet(["a"]), SortedSet([1]))
+    @test_throws ArgumentError isequal(SortedSet(["a"]), SortedSet(["b"],Reverse))
 end
 
 
 
 function seekfile(fname)
-    fullname = joinpath(Pkg.dir("DataStructures"), "test", fname)
+    #fullname = joinpath(Pkg.dir("DataStructures"), "test", fname)
+    fname
 end
 
 immutable CaseInsensitive <: Ordering
@@ -637,16 +861,16 @@ eq(::CaseInsensitive, a, b) = isequal(lowercase(a), lowercase(b))
 
 
 
-## Test use of alternative orderings
 
 function test5()
+    ## Test use of alternative orderings in test5
     keylist = ["Apple", "aPPle", "berry", "CHerry", "Dairy", "diary"]
     vallist = [6,9,-4,2,1,8]
     m = SortedDict(@compat Dict{ASCIIString,Int}())
     for j = 1:6
         m[keylist[j]] = vallist[j]
     end
-    checkcorrectness(m.bt)
+    checkcorrectness(m.bt, false)
     expectedord1 = [1,4,5,2,3,6]
     count = 0
     for p in m
@@ -659,7 +883,7 @@ function test5()
     for j = 1 : 6
         m2[keylist[j]] = vallist[j]
     end
-    checkcorrectness(m2.bt)
+    checkcorrectness(m2.bt, false)
     expectedord2 = [6,3,2,5,4,1]
     count = 0
     for p in m2
@@ -672,7 +896,7 @@ function test5()
     for j = 1 : 6
         m3[keylist[j]] = vallist[j]
     end
-    checkcorrectness(m3.bt)
+    checkcorrectness(m3.bt, false)
     expectedord3 = [2,3,4,5,6]
     count = 0
     for p in m3
@@ -685,7 +909,7 @@ function test5()
     for j = 1 : 6
         m4[keylist[j]] = vallist[j]
     end
-    checkcorrectness(m4.bt)
+    checkcorrectness(m4.bt, false)
     count = 0
     for p in m4
         count += 1
@@ -821,12 +1045,309 @@ function test6b(numtrial::Int, expectedk::ASCIIString, expectedd::ASCIIString)
 end
 
 
+function test7()
+    # Test all methods of SortedMultiDict except loops
+    factors = SortedMultiDict(Int[], Int[])
+    N = 1000
+    checkcorrectness(factors.bt, true)
+    len = 0
+    for factor = 1 : N
+        for multiple = factor : factor : N
+            insert!(factors, multiple, factor)
+            len += 1
+        end
+    end
+    @test length(factors) == len
+    @test (70,2) in factors
+    @test (70,14) in factors
+    @test !((70,15) in factors)
+    @test !((N+1,15) in factors)
+    @test eltype(factors) == (Int,Int)
+    @test orderobject(factors) == Forward
+    @test haskey(factors, 60)
+    @test !haskey(factors, -1)
+    checkcorrectness(factors.bt, true)
+    i = startof(factors)
+    i = advance(i)
+    @test deref(i) == (2,1)
+    @test deref_key(i) == 2
+    @test deref_value(i) == 1
+    @test factors[semi(i)] == 1
+    factors[semi(i)] = 7
+    @test deref(i) == (2,7)
+    factors[semi(i)] = 1
+    i = regress(i)
+    i = regress(i)
+    @test i == beforestarttoken(factors)
+    pr = first(factors)
+    @test pr == (1,1)
+    pr2 = last(factors)
+    @test pr2 == (N,N)
+    i = searchsortedfirst(factors,77)
+    @test deref(i) == (77,1)
+    i = searchsortedlast(factors,77)
+    @test deref(i) == (77,77)
+    i = searchsortedafter(factors,77)
+    @test deref(i) == (78,1)
+    isemi = semi(i)
+    icont = container(i)
+    i2 = assemble(icont,isemi)
+    @test i == i2
+    @test deref(i2) == (78,1)
+    expected = [1,2,4,5,8,10,16,20,40,80]
+    i1,i2 = searchequalrange(factors, 80)
+    i = i1
+    for e in expected
+        @test deref_value(i) == e
+        i = advance(i)
+    end
+    @test isequal(i,i2)
+    @test !isequal(i,i1)
+    insert!(factors, 80, 6)
+    @test length(factors) == len + 1
+    checkcorrectness(factors.bt, true)
+    expected1 = deepcopy(expected)
+    push!(expected1, 6)
+    i1,i2 = searchequalrange(factors, 80)
+    i = i1
+    for e in expected1
+        @test deref_value(i) == e
+        i = advance(i)
+    end
+    @test isequal(i,i2)
+    @test !isequal(i,i1)
+    i6 = regress(i2)
+    delete!(i6)
+    @test length(factors) == len
+    checkcorrectness(factors.bt, true)
+    i1,i2 = searchequalrange(factors, 80)
+    i = i1
+    for e in expected
+        @test deref_value(i) == e
+        i = advance(i)
+    end
+    @test isequal(i,i2)
+    @test !isempty(factors)
+    empty!(factors)
+    checkcorrectness(factors.bt, true) 
+    @test length(factors) == 0
+    @test isempty(factors)
+    i = startof(factors)
+    @test i == pastendtoken(factors)
+    i = endof(factors)
+    @test i == beforestarttoken(factors)
+    i1,i2 = searchequalrange(factors, N + 2)
+    @test i1 == i2
+    m1 = SortedMultiDict(["apples", "apples", "bananas"], [2.0, 1.0,1.5])
+    checkcorrectness(m1.bt, true)
+    m2 = SortedMultiDict(["bananas","apples", "apples"], [1.5, 2.0, 1.0])
+    checkcorrectness(m2.bt, true)
+    m3 = SortedMultiDict(["apples", "apples", "bananas"], [1.0, 2.0, 1.5])
+    checkcorrectness(m3.bt, true)
+    @test isequal(m1,m2)
+    @test !isequal(m1,m3)
+    @test !isequal(m1, SortedMultiDict(["apples"], [2.0]))
+    tok = insert!(m2, "cherries", 6.1)
+    checkcorrectness(m2.bt, true)
+    @test !isequal(m1,m2)
+    delete!(tok)
+    checkcorrectness(m2.bt, true)
+    @test isequal(m1,m2)
+    m4 = deepcopy(m2)
+    checkcorrectness(m4.bt, true)
+    @test isequal(m1,m4)
+    m5 = packcopy(m2)
+    checkcorrectness(m5.bt, true)
+    @test isequal(m1,m5)
+    m6 = packdeepcopy(m2)
+    checkcorrectness(m6.bt, true)
+    @test isequal(m1,m6)
+
+    m1 = SortedMultiDict(["bananas", "apples", "cherries", "cherries", "oranges"], 
+                         [1.0, 2.0, 3.0, 4.0, 5.0])
+    m2 = SortedMultiDict(["apples", "cherries", "cherries", "bananas", "plums"],
+                         [6.0, 7.0, 8.0, 9.0, 10.0])
+    m3 = SortedMultiDict(["apples", "apples", "bananas", "bananas",
+                          "cherries", "cherries", "cherries", "cherries",
+                          "oranges", "plums"],
+                         [2.0, 6.0, 1.0, 9.0, 3.0, 4.0, 7.0, 8.0, 5.0, 10.0])
+    m4 = merge(m1, m2)
+    @test isequal(m3, m4)
+    m5 = merge(m2, m1)
+    @test !isequal(m3, m5)
+    merge!(m1, m2)
+    @test isequal(m1, m3)
+end
+    
+
+function test8()
+    # Test SortedSet
+    N = 1000
+    sm = 0.0
+    m = SortedSet(Float64[])
+    smallest = 10.0
+    largest = -10.0
+    for j = 1 : N
+        u = j * exp(1)
+        ui = u - floor(u)
+        push!(m, ui)
+        sm += ui
+        smallest = min(smallest,ui)
+        largest = max(largest,ui)
+    end
+    isnew,t = insert!(m, 72.5)
+    @test isnew
+    @test deref(t) == 72.5
+    delete!(t)
+    isnew,t = insert!(m, 73.5)
+    @test isnew
+    @test deref(t) == 73.5
+    delete!(m, 73.5)
+    checkcorrectness(m.bt, false)
+    count = 0
+    sm2 = 0.0
+    prev = -1.0
+    for k in m
+        sm2 += k
+        count += 1
+        @test k >= prev
+    end
+    @test abs(sm2 - sm) <= 1e-10
+    @test count == N
+    @test length(m) == N
+    ii2 = searchsortedfirst(m, 0.5)
+    ii2cont = container(ii2)
+    ii2semi = semi(ii2)
+    ii2b = assemble(ii2cont, ii2semi)
+    @test ii2 == ii2b && deref(ii2) == deref(ii2b)
+    i3 = startof(m)
+    v = first(m)
+    @test v == smallest
+    @test deref(i3) == v
+    i4 = endof(m)
+    w = last(m)
+    @test w == largest
+    @test deref(i4) == w
+    i5 = beforestarttoken(m)
+    @test advance(i5) == i3
+    i6 = pastendtoken(m)
+    @test regress(i6) == i4
+    @test advance(i5) != i4
+    @test regress(i6) != i3
+    j1 = searchsortedfirst(m,0.5)
+    j2 = searchsortedlast(m,0.5)
+    j3 = searchsortedafter(m,0.5)
+    @test deref(j1) > 0.5
+    @test deref(j2) < 0.5
+    @test advance(j2) == j1
+    @test j1 == j3
+    k1 = searchsortedfirst(m,smallest)
+    k2 = searchsortedlast(m,smallest)
+    k3 = searchsortedafter(m,smallest)
+    @test deref(k1) == smallest
+    @test deref(k2) == smallest
+    @test deref(regress(k3)) == smallest
+    secondsmallest = deref(k3)
+    sk = searchsortedfirst(m,0.4)
+    ek = searchsortedfirst(m,0.6)
+    dcount = 0
+    for (t,k) in tokens(excludelast(sk,ek))
+        delete!(t)
+        dcount += 1
+        if dcount % 20 == 0
+            checkcorrectness(m.bt, false)
+        end
+    end
+    newcount = 0
+    for k in m
+        newcount += 1
+        @test k < 0.4 || k > 0.6
+    end
+    @test newcount == N - dcount
+    @test smallest in m
+    @test haskey(m,smallest)
+    @test !(0.5 in m)
+    @test !haskey(m,0.5)
+    @test eltype(m) == Float64
+    @test orderobject(m) == Forward
+    pop!(m, smallest)
+    checkcorrectness(m.bt, false)
+    @test length(m) == N - dcount - 1
+    key1 = pop!(m)
+    @test key1 == secondsmallest
+    @test length(m) == N - dcount - 2
+    checkcorrectness(m.bt, false)
+    @test !isempty(m)
+    empty!(m)
+    @test isempty(m)
+    m1 = SortedSet(["blue", "orange", "red"])
+    m2 = SortedSet(["orange", "blue", "red"])
+    m3 = SortedSet(["orange", "yellow", "red"])
+    @test isequal(m1,m2)
+    @test !isequal(m1,m3)
+    @test !isequal(m1, SortedSet(["blue"]))
+    m4 = packcopy(m3)
+    @test isequal(m3,m4)
+    m5 = packdeepcopy(m4)
+    @test isequal(m3,m4)
+    m6 = deepcopy(m5)
+    @test isequal(m3,m5)
+    checkcorrectness(m1.bt, false)
+    checkcorrectness(m2.bt, false)
+    checkcorrectness(m3.bt, false)
+    checkcorrectness(m4.bt, false)
+    checkcorrectness(m5.bt, false)
+    checkcorrectness(m5.bt, false)
+    m7 = union(m1, ["yellow"])
+    m8 = union(m3, SortedSet(["blue"]))
+    @test isequal(m7,m8)
+    @test !isequal(m1,m8)
+    union!(m1, ["yellow"])
+    @test isequal(m1,m8)
+    m8a = intersect(m8)
+    @test isequal(m8a,m8)
+    m9 = intersect(m8, SortedSet(["yellow", "red", "white"]))
+    @test isequal(m9, SortedSet(["red", "yellow"]))
+    m9a = intersect(m8, SortedSet(["yellow", "red", "white"]), m8)
+    @test isequal(m9a, SortedSet(["red", "yellow"]))
+    m10 = symdiff(m8,  SortedSet(["yellow", "red", "white"]))
+    @test isequal(m10, SortedSet(["white", "blue", "orange"]))
+    m11 = symdiff(m8, SortedSet(["yellow", "red", "blue", "orange",
+                                 "zinc"]))
+    @test isequal(m11, SortedSet(["zinc"]))
+    m12 = symdiff(SortedSet(["yellow", "red", "blue", "orange",
+                                 "zinc"]), m8)
+    @test isequal(m12, SortedSet(["zinc"]))
+    m13 = setdiff(m8, SortedSet(["yellow", "red", "white"]))
+    @test isequal(m13, SortedSet(["blue", "orange"]))
+    m14 = setdiff(m8, SortedSet(["blue"]))
+    @test isequal(m14, SortedSet(["orange", "yellow", "red"]))
+    @test issubset(["yellow", "blue"], m8)
+    @test !issubset(["blue", "green"], m8)
+    setdiff!(m8, SortedSet(["yellow", "red", "white"]))
+    @test isequal(m8, SortedSet(["blue", "orange"]))
+end    
+               
+        
 
 
+    
+    
+    
+    
+println("test1")
 test1()
+println("test2")
 test2()
+println("test3")
 test3(0x00000000)
+println("test4")
 test4()
+println("test5")
 test5()
 #test6(2, "soothingly", "compere")
+println("test7")
+test7()
+println("test8")
+test8()
 
