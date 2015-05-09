@@ -78,7 +78,7 @@ end
 ## Function checkcorrectness checks a balanced tree for correctness.
 
 function checkcorrectness{K,D,Ord <: Ordering}(t::DataStructures.BalancedTree23{K,D,Ord},
-                                               allowdups::Bool)
+                                               allowdups=false)
     dsz = size(t.data, 1)
     tsz = size(t.tree, 1)
     r = t.rootloc
@@ -1335,19 +1335,12 @@ end
     
     
     
-println("test1")
 test1()
-println("test2")
 test2()
-println("test3")
 test3(0x00000000)
-println("test4")
 test4()
-println("test5")
 test5()
 #test6(2, "soothingly", "compere")
-println("test7")
 test7()
-println("test8")
 test8()
 

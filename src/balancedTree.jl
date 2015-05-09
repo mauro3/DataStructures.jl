@@ -319,12 +319,12 @@ end
 ## a data node at the bottom tree level.
 
 function replaceparent!{K,D}(data::Array{KDRec{K,D},1}, whichind::Int, newparent::Int)
-    @inbounds data[whichind] = KDRec{K,D}(newparent, data[whichind].k, data[whichind].d)
+    data[whichind] = KDRec{K,D}(newparent, data[whichind].k, data[whichind].d)
     nothing
 end
 
 function replaceparent!{K}(tree::Array{TreeNode{K},1}, whichind::Int, newparent::Int)
-    @inbounds tree[whichind] = TreeNode{K}(tree[whichind].child1, tree[whichind].child2,
+    tree[whichind] = TreeNode{K}(tree[whichind].child1, tree[whichind].child2,
                                  tree[whichind].child3, newparent,
                                  tree[whichind].splitkey1, 
                                  tree[whichind].splitkey2)
@@ -345,7 +345,7 @@ function push_or_reuse!(a::Vector, freelocs::Array{Int,1}, item)
         return length(a)
     end
     loc = pop!(freelocs)
-    @inbounds a[loc] = item
+    a[loc] = item
     return loc
 end
 
@@ -366,7 +366,7 @@ function insert!{K,D,Ord <: Ordering}(t::BalancedTree23{K,D,Ord}, k, d, allowdup
     
     ## First we find the greatest data node that is <= k.
     leafind, exactfound = findkey(t, k)
-    @inbounds parent = t.data[leafind].parent
+    parent = t.data[leafind].parent
 
     ## The following code is necessary because in the case of a
     ## brand new tree, the initial tree and data entries were incompletely
@@ -376,7 +376,7 @@ function insert!{K,D,Ord <: Ordering}(t::BalancedTree23{K,D,Ord}, k, d, allowdup
     ## stored in the dummy placeholder nodes so that they no
     ## longer hold undefined references.
 
-    @inbounds if size(t.data,1) == 2
+    if size(t.data,1) == 2
         # @assert(t.rootloc == 1 && t.depth == 1)
         t.tree[1] = TreeNode{K}(t.tree[1].child1, t.tree[1].child2,
                                 t.tree[1].child3, t.tree[1].parent,
@@ -388,7 +388,7 @@ function insert!{K,D,Ord <: Ordering}(t::BalancedTree23{K,D,Ord}, k, d, allowdup
     ## If we have found exactly k in the tree, then we
     ## replace the data associated with k and return.
 
-    @inbounds if exactfound && !allowdups
+    if exactfound && !allowdups
         t.data[leafind] = KDRec{K,D}(parent, k,d)
         return false, leafind
     end
@@ -424,7 +424,7 @@ function insert!{K,D,Ord <: Ordering}(t::BalancedTree23{K,D,Ord}, k, d, allowdup
     ##     minkeynewchild:  This is the key that is the minimum value in
     ##         the subtree rooted at newchild.
 
-    @inbounds while t.tree[p1].child3 > 0
+    while t.tree[p1].child3 > 0
         isleaf = (curdepth == depth)
         oldtreenode = t.tree[p1]
 
@@ -499,7 +499,7 @@ function insert!{K,D,Ord <: Ordering}(t::BalancedTree23{K,D,Ord}, k, d, allowdup
     ## big loop terminated either because a 2-node was reached
     ## (splitroot == false) or we went up the whole tree seeing
     ## only 3-nodes (splitroot == true).  
-    @inbounds if !splitroot
+    if !splitroot
         
         ## If our ascent reached a 2-node, then we convert it to
         ## a 3-node by giving it a child3 field that is >0.
@@ -693,24 +693,24 @@ function delete!{K,D,Ord<:Ordering}(t::BalancedTree23{K,D,Ord}, it::Int)
     ## The flag mustdeleteroot means that the tree has contracted
     ## enough that it loses a level.
 
-    @inbounds p = t.data[it].parent
+    p = t.data[it].parent
     newchildcount = 0
-    @inbounds c1 = t.tree[p].child1
+    c1 = t.tree[p].child1
     deletionleftkey1_valid = true
-    @inbounds if c1 != it
+    if c1 != it
         deletionleftkey1_valid = false
         newchildcount += 1
         t.deletionchild[newchildcount] = c1
         t.deletionleftkey[newchildcount] = t.data[c1].k
     end
-    @inbounds c2 = t.tree[p].child2
-    @inbounds if c2 != it
+    c2 = t.tree[p].child2
+    if c2 != it
         newchildcount += 1
         t.deletionchild[newchildcount] = c2
         t.deletionleftkey[newchildcount] = t.data[c2].k
     end
-    @inbounds c3 = t.tree[p].child3
-    @inbounds if c3 != it && c3 > 0
+    c3 = t.tree[p].child3
+    if c3 != it && c3 > 0
         newchildcount += 1
         t.deletionchild[newchildcount] = c3
         t.deletionleftkey[newchildcount] = t.data[c3].k
@@ -718,7 +718,7 @@ function delete!{K,D,Ord<:Ordering}(t::BalancedTree23{K,D,Ord}, it::Int)
     # @assert(newchildcount == 1 || newchildcount == 2)
     push!(t.freedatainds, it)
     pop!(t.useddatacells,it)
-    @inbounds defaultKey = t.tree[1].splitkey1
+    defaultKey = t.tree[1].splitkey1
     curdepth = t.depth
     mustdeleteroot = false
     pparent = -1
@@ -730,7 +730,7 @@ function delete!{K,D,Ord<:Ordering}(t::BalancedTree23{K,D,Ord}, it::Int)
     ## If newchildcount == 1, then the ascent must continue since a tree
     ## node cannot have one child.
     
-    @inbounds while true
+    while true
         pparent = t.tree[p].parent
         ## Simple cases when the new child count is 2 or 3
         if newchildcount == 2
@@ -948,7 +948,7 @@ function delete!{K,D,Ord<:Ordering}(t::BalancedTree23{K,D,Ord}, it::Int)
         end
         curdepth -= 1
     end
-    @inbounds if mustdeleteroot
+    if mustdeleteroot
         # @assert(!deletionleftkey1_valid)
         # @assert(p == t.rootloc)
         t.rootloc = t.deletionchild[1]
@@ -970,7 +970,7 @@ function delete!{K,D,Ord<:Ordering}(t::BalancedTree23{K,D,Ord}, it::Int)
     ## node is the leftmost placeholder, which
     ## cannot be deleted.
 
-    @inbounds if deletionleftkey1_valid
+    if deletionleftkey1_valid
         while true
             pparentnode = t.tree[pparent]
             if pparentnode.child2 == p
