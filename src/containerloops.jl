@@ -1,4 +1,4 @@
-import Base.keys
+Mimport Base.keys
 import Base.values
 
 ## These are the containers that can be looped over
@@ -9,6 +9,7 @@ import Base.values
 typealias SCContainers0 Union(SortedDict, SortedMultiDict)
 typealias SCContainers Union(SCContainers0, SortedSet)
 
+@inline extractcontainer(s::SCContainers) = s
 
 ## This holds an object describing an exclude-last
 ## iteration.
@@ -27,6 +28,8 @@ immutable SCExcludeLast1{ContainerType <: SortedSet} <: AbstractExcludeLast{Cont
     pastlast::Int
 end
 
+@inline extractcontainer(s::AbstractIncludeLast) = s.m
+
 
 ## This holds an object describing an include-last
 ## (i.e., colon operator) iteration.
@@ -40,11 +43,15 @@ immutable SCIncludeLast0{ContainerType <: SCContainers0} <: AbstractIncludeLast{
 end
 
 
+
 immutable SCIncludeLast1{ContainerType <: SortedSet} <: AbstractIncludeLast{ContainerType}
     m::ContainerType
     first::Int
     last::Int
 end
+
+@inline extractcontainer(s::AbstractIncludeLast) = s.m
+
 
 ## The basic iterations are either over the whole sorted container, an
 ## exclude-last object or include-last object.
@@ -98,6 +105,9 @@ typealias SCCompoundIterable Union(SCKeyIteration,
                                    SCTokenIteration1,
                                    SCTokenKeyIteration, 
                                    SCTokenValIteration)
+
+@inline extractcontainer(s::SCCompoundIterable) = extractcontainer(s.base)
+
                                    
 typealias SCAllIterable Union(SCIterableTypesBase, SCCompoundIterable)
 
@@ -106,7 +116,6 @@ typealias SCAllIterable Union(SCIterableTypesBase, SCCompoundIterable)
 ## following type.
 
 immutable SCIterationState{ContainerType <: SCContainers}
-    m::ContainerType
     next::Int
     final::Int
 end
@@ -114,9 +123,9 @@ end
 
 ## All the loops have the same method for 'done'
 
-done(::SCAllIterable, state::SCIterationState) = state.next == state.final
+@inline done(::SCAllIterable, state::SCIterationState) = state.next == state.final
 
-checkconsistent(i1::Token, i2::Token) =
+@inline checkconsistent(i1::Token, i2::Token) =
 !(i1.container === i2.container) &&
    throw(ArgumentError("excludelast and colon operator require two tokens for the same container"))
 
@@ -157,7 +166,7 @@ tokens{T <: SCIterableTypesBase1}(ba::T) = SCTokenIteration1(ba)
 tokens{T <: SCIterableTypesBase0}(ki::SCKeyIteration{T}) = SCTokenKeyIteration(ki.base)
 tokens{T <: SCIterableTypesBase0}(vi::SCValIteration{T}) = SCTokenValIteration(vi.base)
 
-start(m::SCContainers) = SCIterationState(m, nextloc0(m.bt,1), 2)
+start(m::SCContainers) = SCIterationState(nextloc0(m.bt,1), 2)
 
 start(e::SCCompoundIterable) = start(e.base)
 
@@ -166,9 +175,9 @@ function start(e::AbstractExcludeLast)
         !(e.pastlast in e.m.bt.useddatacells)) &&
         throw(BoundsError())
     if compareInd(e.m.bt, e.first, e.pastlast) < 0
-        return SCIterationState(e.m, e.first, e.pastlast) 
+        return SCIterationState(e.first, e.pastlast) 
     else
-        return SCIterationState(e.m, 2, 2)
+        return SCIterationState(2, 2)
     end
 end
 
@@ -177,9 +186,9 @@ function start(e::AbstractIncludeLast)
         !(e.last in e.m.bt.useddatacells) || e.last == 2) && 
         throw(BoundsError())
     if compareInd(e.m.bt, e.first, e.last) <= 0
-        return SCIterationState(e.m, e.first, nextloc0(e.m.bt, e.last)) 
+        return SCIterationState(e.first, nextloc0(e.m.bt, e.last)) 
     else
-        return SCIterationState(e.m, 2, 2)
+        return SCIterationState(2, 2)
     end
 end
 
@@ -189,54 +198,54 @@ end
 ## a tokens/basic iteration, a tokens/key iteration, or tokens/values
 ## iteration.
 
-function nexthelper(state::SCIterationState)
-    m = state.m
+@inline function nexthelper(u, state::SCIterationState)
     sn = state.next
-    (sn < 3 || !(sn in m.bt.useddatacells)) && throw(BoundsError())
-    m.bt.data[sn], tokenconstruct(m,sn), SCIterationState(m, nextloc0(m.bt, sn), state.final)
+    (sn < 3 || !(sn in bt.useddatacells)) && throw(BoundsError())
+    extractcontainer(u).bt.data[sn], sn, 
+    SCIterationState(nextloc0(extractcontainer(u).bt, sn), state.final)
 end
 
 
-function next(::SCIterableTypesBase0, state::SCIterationState)
-    dt, t, ni = nexthelper(state)
+@inline function next(u::SCIterableTypesBase0, state::SCIterationState)
+    dt, t, ni = nexthelper(u, state)
     (dt.k, dt.d), ni
 end
 
-function next(::SCIterableTypesBase1, state::SCIterationState)
-    dt, t, ni = nexthelper(state)
+@inline function next(u::SCIterableTypesBase1, state::SCIterationState)
+    dt, t, ni = nexthelper(u, state)
     dt.k, ni
 end
 
 
-function next(::SCKeyIteration, state::SCIterationState)
-    dt, t, ni = nexthelper(state)
+@inline function next(u::SCKeyIteration, state::SCIterationState)
+    dt, t, ni = nexthelper(u, state)
     dt.k, ni
 end
 
-function next(::SCValIteration, state::SCIterationState)
-    dt, t, ni = nexthelper(state)
+@inline function next(u::SCValIteration, state::SCIterationState)
+    dt, t, ni = nexthelper(u, state)
     dt.d, ni
 end
 
 
-function next(::SCTokenIteration0, state::SCIterationState)
-    dt, t, ni = nexthelper(state)
-    (t, (dt.k, dt.d)), ni
+@inline function next(u::SCTokenIteration0, state::SCIterationState)
+    dt, t, ni = nexthelper(u, state)
+    (tokenconstruct(extractcontainer(u), t), (dt.k, dt.d)), ni
 end
 
-function next(::SCTokenIteration1, state::SCIterationState)
-    dt, t, ni = nexthelper(state)
-    (t, dt.k), ni
+@inline function next(u::SCTokenIteration1, state::SCIterationState)
+    dt, t, ni = nexthelper(u, state)
+    (tokenconstruct(extractcontainer(u), t), dt.k), ni
 end
 
-function next(::SCTokenKeyIteration, state::SCIterationState)
-    dt, t, ni = nexthelper(state)
-    (t, dt.k), ni
+@inline function next(u::SCTokenKeyIteration, state::SCIterationState)
+    dt, t, ni = nexthelper(u, state)
+    (tokenconstruct(extractcontainer(u), t), dt.k), ni
 end
 
-function next(::SCTokenValIteration, state::SCIterationState)
-    dt, t, ni = nexthelper(state)
-    (t, dt.d), ni
+function next(u::SCTokenValIteration, state::SCIterationState)
+    dt, t, ni = nexthelper(u, state)
+    (tokenconstruct(extractcontainer(u), t), dt.d), ni
 end
 
 empty!(m::SCContainers) =  empty!(m.bt)
