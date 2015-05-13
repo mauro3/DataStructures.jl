@@ -28,7 +28,7 @@ immutable SCExcludeLast1{ContainerType <: SortedSet} <: AbstractExcludeLast{Cont
     pastlast::Int
 end
 
-@inline extractcontainer(s::AbstractIncludeLast) = s.m
+@inline extractcontainer(s::AbstractExcludeLast) = s.m
 
 
 ## This holds an object describing an include-last
@@ -115,7 +115,7 @@ typealias SCAllIterable Union(SCIterableTypesBase, SCCompoundIterable)
 ## All the loops maintain a state which is an object of the
 ## following type.
 
-immutable SCIterationState{ContainerType <: SCContainers}
+immutable SCIterationState
     next::Int
     final::Int
 end
@@ -200,7 +200,7 @@ end
 
 @inline function nexthelper(u, state::SCIterationState)
     sn = state.next
-    (sn < 3 || !(sn in bt.useddatacells)) && throw(BoundsError())
+    (sn < 3 || !(sn in extractcontainer(u).bt.useddatacells)) && throw(BoundsError())
     extractcontainer(u).bt.data[sn], sn, 
     SCIterationState(nextloc0(extractcontainer(u).bt, sn), state.final)
 end
